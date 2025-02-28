@@ -1,6 +1,5 @@
 """NotDiamond client class"""
 
-
 import inspect
 import logging
 import time
@@ -535,6 +534,9 @@ def _ndllm_factory(import_target: _NDClientTarget = None):
         else:
             LOGGER.debug(msg)
             return _NDRouterClient
+
+    if import_target is _NDClientTarget.ROUTER:
+        return _NDRouterClient
 
     class _NDInvokerClient(_NDRouterClient, LLM):
         """
@@ -1681,110 +1683,114 @@ def _ndllm_factory(import_target: _NDClientTarget = None):
 
             return True
 
-    if import_target is _NDClientTarget.ROUTER:
-        return _NDRouterClient
     return _NDInvokerClient
 
 
-_NDClient = _ndllm_factory()
+def init_NotDiamond_client(router_only: bool = False):
+    if router_only:
+        _NDClient = _ndllm_factory(import_target=_NDClientTarget.ROUTER)
+    else:
+        _NDClient = _ndllm_factory(import_target=_NDClientTarget.INVOKER)
 
+    class NotDiamond(_NDClient):
+        api_key: str
+        """
+        API key required for making calls to NotDiamond.
+        You can get an API key via our dashboard: https://app.notdiamond.ai
+        If an API key is not set, it will check for NOTDIAMOND_API_KEY in .env file.
+        """
 
-class NotDiamond(_NDClient):
-    api_key: str
-    """
-    API key required for making calls to NotDiamond.
-    You can get an API key via our dashboard: https://app.notdiamond.ai
-    If an API key is not set, it will check for NOTDIAMOND_API_KEY in .env file.
-    """
+        llm_configs: Optional[List[Union[LLMConfig, str]]]
+        """The list of LLMs that are available to route between."""
 
-    llm_configs: Optional[List[Union[LLMConfig, str]]]
-    """The list of LLMs that are available to route between."""
+        default: Union[LLMConfig, int, str]
+        """
+        Set a default LLM, so in case anything goes wrong in the flow,
+        as for example NotDiamond API call fails, your code won't break and you have
+        a fallback model. There are various ways to configure a default model:
 
-    default: Union[LLMConfig, int, str]
-    """
-    Set a default LLM, so in case anything goes wrong in the flow,
-    as for example NotDiamond API call fails, your code won't break and you have
-    a fallback model. There are various ways to configure a default model:
+        - Integer, specifying the index of the default provider from the llm_configs list
+        - String, similar how you can specify llm_configs, of structure 'provider_name/model_name'
+        - LLMConfig, just directly specify the object of the provider
 
-    - Integer, specifying the index of the default provider from the llm_configs list
-    - String, similar how you can specify llm_configs, of structure 'provider_name/model_name'
-    - LLMConfig, just directly specify the object of the provider
+        By default, we will set your first LLM in the list as the default.
+        """
 
-    By default, we will set your first LLM in the list as the default.
-    """
+        max_model_depth: Optional[int]
+        """
+        If your top recommended model is down, specify up to which depth of routing you're willing to go.
+        If max_model_depth is not set, it defaults to the length of the llm_configs list.
+        If max_model_depth is set to 0, the init will fail.
+        If the value is larger than the llm_configs list length, we reset the value to len(llm_configs).
+        """
 
-    max_model_depth: Optional[int]
-    """
-    If your top recommended model is down, specify up to which depth of routing you're willing to go.
-    If max_model_depth is not set, it defaults to the length of the llm_configs list.
-    If max_model_depth is set to 0, the init will fail.
-    If the value is larger than the llm_configs list length, we reset the value to len(llm_configs).
-    """
+        latency_tracking: bool
+        """
+        Tracking and sending latency of LLM call to NotDiamond server as feedback, so we can improve our router.
+        By default this is turned on, set it to False to turn off.
+        """
 
-    latency_tracking: bool
-    """
-    Tracking and sending latency of LLM call to NotDiamond server as feedback, so we can improve our router.
-    By default this is turned on, set it to False to turn off.
-    """
+        hash_content: bool
+        """
+        Hashing the content before being sent to the NotDiamond API.
+        By default this is False.
+        """
 
-    hash_content: bool
-    """
-    Hashing the content before being sent to the NotDiamond API.
-    By default this is False.
-    """
+        tradeoff: Optional[str]
+        """
+        [DEPRECATED] The tradeoff constructor parameter is deprecated and will be removed in a future version.
+        Please specify the tradeoff when using model_select or invocation methods.
 
-    tradeoff: Optional[str]
-    """
-    [DEPRECATED] The tradeoff constructor parameter is deprecated and will be removed in a future version.
-    Please specify the tradeoff when using model_select or invocation methods.
+        Define tradeoff between "cost" and "latency" for the router to determine the best LLM for a given query.
+        If None is specified, then the router will not consider either cost or latency.
 
-    Define tradeoff between "cost" and "latency" for the router to determine the best LLM for a given query.
-    If None is specified, then the router will not consider either cost or latency.
+        The supported values: "cost", "latency"
 
-    The supported values: "cost", "latency"
+        Defaults to None.
+        """
 
-    Defaults to None.
-    """
+        preference_id: Optional[str]
+        """The ID of the router preference that was configured via the Dashboard. Defaults to None."""
 
-    preference_id: Optional[str]
-    """The ID of the router preference that was configured via the Dashboard. Defaults to None."""
+        tools: Optional[Sequence[Union[Dict[str, Any], Callable]]]
+        """Bind tools to the LLM object. The tools will be passed to the LLM object when invoking it."""
 
-    tools: Optional[Sequence[Union[Dict[str, Any], Callable]]]
-    """Bind tools to the LLM object. The tools will be passed to the LLM object when invoking it."""
+        nd_api_url: Optional[str]
+        """The URL of the NotDiamond API. Defaults to settings.NOTDIAMOND_API_URL."""
 
-    nd_api_url: Optional[str]
-    """The URL of the NotDiamond API. Defaults to settings.NOTDIAMOND_API_URL."""
+        user_agent: Union[str, None]
 
-    user_agent: Union[str, None]
+        max_retries: int
+        """The maximum number of retries to make when calling the Not Diamond API."""
 
-    max_retries: int
-    """The maximum number of retries to make when calling the Not Diamond API."""
+        timeout: float
+        """The timeout for the Not Diamond API call."""
 
-    timeout: float
-    """The timeout for the Not Diamond API call."""
+        class Config:
+            arbitrary_types_allowed = True
 
-    class Config:
-        arbitrary_types_allowed = True
-
-    def __init__(
-        self,
-        nd_api_url: Optional[str] = settings.NOTDIAMOND_API_URL,
-        user_agent: Union[str, None] = settings.DEFAULT_USER_AGENT,
-        *args,
-        **kwargs,
-    ):
-        super().__init__(
-            nd_api_url=nd_api_url, user_agent=user_agent, *args, **kwargs
-        )
-        self.nd_api_url = nd_api_url
-
-        if kwargs.get("tradeoff") is not None:
-            warnings.warn(
-                "The tradeoff constructor parameter is deprecated and will be removed in a "
-                "future version. Please specify the tradeoff when using model_select or invocation methods.",
-                DeprecationWarning,
-                stacklevel=2,
+        def __init__(
+            self,
+            nd_api_url: Optional[str] = settings.NOTDIAMOND_API_URL,
+            user_agent: Union[str, None] = settings.DEFAULT_USER_AGENT,
+            *args,
+            **kwargs,
+        ):
+            super().__init__(
+                nd_api_url=nd_api_url, user_agent=user_agent, *args, **kwargs
             )
+            self.nd_api_url = nd_api_url
+
+            if kwargs.get("tradeoff") is not None:
+                warnings.warn(
+                    "The tradeoff constructor parameter is deprecated and will be removed in a "
+                    "future version. Please specify the tradeoff when using model_select or invocation methods.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+
+    client = NotDiamond()
+    return client
 
 
 def _get_accepted_invoke_errors(provider: str) -> Tuple:
